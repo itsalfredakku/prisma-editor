@@ -1,0 +1,53 @@
+name: Docker Image CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  nest-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v2
+        with:
+          node-version: 'lts/*'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: TypeScript Check
+        id: typescript-check
+        run: npx tsc --noEmit
+        continue-on-error: true
+
+      - name: Build the project
+        run: npm run build
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+
+      - name: Log in to Docker Hub
+        run: echo "${{ secrets.DOCKERHUB_PASSWORD }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+
+      - name: Build and tag Docker image
+        run: docker build -t ${{ secrets.DOCKERHUB_REF }} .
+
+      - name: Push Docker image to Docker Hub
+        run: docker push ${{ secrets.DOCKERHUB_REF }}
+
+      - name: Create GitHub Issue on Failure
+        if: failure() && steps.typescript-check.outcome == 'failure'
+        run: |
+          gh issue create \
+            --title "Build failed during TypeScript Check" \
+            --body "The build failed due to TypeScript check errors. Please check the logs for more details." \
+            --assignee ${{ github.actor }} \
+            --labels "bug"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
